@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "data-relaton-org",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true
+  },
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "relaton-dumps"
+    }
+  ]
+  // Custom domain: enable once the zone is confirmed on the account.
+  // "routes": [{ "pattern": "data.relaton.org", "custom_domain": true }]
+}
