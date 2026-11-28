@@ -32,7 +32,6 @@ jobs:
           API: https://api-relaton-org.relaton.workers.dev
         run: |
           FLAVOR="${{ inputs.flavor }}"
-          set -o pipefail
           export_one() {
             echo "=== exporting $1"
             curl -sf --max-time 3600 -X POST \
@@ -43,11 +42,8 @@ jobs:
           if [ "$FLAVOR" != "all" ]; then
             export_one "$FLAVOR"
           else
-            curl -sf "$API/v3/flavors" | python3 -c "
-import json, sys
-for f in json.load(sys.stdin).get('flavors', []):
-    print(f.get('flavor') or '')" | while read -r f; do
-              [ -z "$f" ] && continue
+            FLAVORS=$(curl -sf "$API/v3/flavors" | python3 -c "import json,sys; [print(f.get('flavor') or '') for f in json.load(sys.stdin).get('flavors', [])]")
+            for f in $FLAVORS; do
               export_one "$f" || echo "export failed: $f"
             done
           fi
