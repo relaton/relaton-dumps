@@ -11,6 +11,7 @@ on:
         description: Flavor id (e.g. iso, rfc) or "all"
         required: true
         default: all
+        type: string
 
 permissions:
   contents: read
