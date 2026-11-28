@@ -1,0 +1,52 @@
+name: export
+
+# The fleet walk: one flavor per export (budget-shaped reads, no
+# full-corpus sync). Dispatch with a flavor id, or "all" to walk the API's
+# flavor list sequentially. Exports are idempotent per generation and skip
+# unchanged datasets.
+on:
+  workflow_dispatch:
+    inputs:
+      flavor:
+        description: Flavor id (e.g. iso, rfc) or "all"
+        required: true
+        default: all
+
+permissions:
+  contents: read
+
+concurrency:
+  group: export-fleet
+  cancel-in-progress: false
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Export flavor(s)
+        env:
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          BASE: https://data.relaton.org
+          API: https://api-relaton-org.relaton.workers.dev
+        run: |
+          FLAVOR="${{ inputs.flavor }}"
+          set -o pipefail
+          export_one() {
+            echo "=== exporting $1"
+            curl -sf --max-time 3600 -X POST \
+              -H "Authorization: Bearer $ADMIN_TOKEN" \
+              "$BASE/admin/export/$1"
+            echo
+          }
+          if [ "$FLAVOR" != "all" ]; then
+            export_one "$FLAVOR"
+          else
+            curl -sf "$API/v3/flavors" | python3 -c "
+import json, sys
+for f in json.load(sys.stdin).get('flavors', []):
+    print(f.get('flavor') or '')" | while read -r f; do
+              [ -z "$f" ] && continue
+              export_one "$f" || echo "export failed: $f"
+            done
+          fi
