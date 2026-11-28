@@ -81,14 +81,16 @@ export class Sha256 {
       d = c; c = b; b = a;
       a = (t1 + t2) >>> 0;
     }
-    this.h[0] = (this.h[0] + a) >>> 0;
-    this.h[1] = (this.h[1] + b) >>> 0;
-    this.h[2] = (this.h[2] + c) >>> 0;
-    this.h[3] = (this.h[3] + d) >>> 0;
-    this.h[4] = (this.h[4] + e) >>> 0;
-    this.h[5] = (this.h[5] + f) >>> 0;
-    this.h[6] = (this.h[6] + g) >>> 0;
-    this.h[7] = (this.h[7] + h) >>> 0;
+    const p0 = this.h[0]!, p1 = this.h[1]!, p2 = this.h[2]!, p3 = this.h[3]!;
+    const p4 = this.h[4]!, p5 = this.h[5]!, p6 = this.h[6]!, p7 = this.h[7]!;
+    this.h[0] = (p0 + a) >>> 0;
+    this.h[1] = (p1 + b) >>> 0;
+    this.h[2] = (p2 + c) >>> 0;
+    this.h[3] = (p3 + d) >>> 0;
+    this.h[4] = (p4 + e) >>> 0;
+    this.h[5] = (p5 + f) >>> 0;
+    this.h[6] = (p6 + g) >>> 0;
+    this.h[7] = (p7 + h) >>> 0;
   }
 }
 

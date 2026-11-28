@@ -1,6 +1,10 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { SELF, env } from "cloudflare:test";
 
+// The pool's ProvidedEnv doesn't know the binding names; the worker's own
+// Env does. (Same cast pattern the api-js suite uses for its secrets.)
+const { DB } = env as unknown as { DB: D1Database };
+
 // relaton-dumps#1: versioned NDJSON snapshots. The D1 schema mirrors the
 // API dataset's tables this worker reads (documents_v2 for the records,
 // documents_search for the flavor list) — the same CREATE statements,
@@ -33,16 +37,17 @@ const RECORD = (key: string, flavor: string, title: string) =>
   JSON.stringify({ key, flavor, docidentifier: [{ content: key, type: flavor.toUpperCase(), primary: true }], title: [{ content: title, type: "main" }] });
 
 async function seed() {
-  const rows = [
+  const base: [string, string, string][] = [
     ["RFC 1", "rfc", "Host Software"],
     ["RFC 8446", "rfc", "TLS 1.3"],
     ["RFC 9000", "rfc", "QUIC"],
-  ].map(([key, flavor, title]) => [key, flavor, `${flavor}-${key}.yaml`, RECORD(key, flavor, title), "2026-11-28T00:00:00Z"]);
+  ];
+  const rows = base.map(([key, flavor, title]) => [key, flavor, `${flavor}-${key}.yaml`, RECORD(key, flavor, title), "2026-11-28T00:00:00Z"] as [string, string, string, string, string]);
   for (const [key, flavor, file, data, at] of rows) {
-    await env.DB.prepare("INSERT INTO documents_v2 (key, flavor, file, data, indexed_at) VALUES (?1, ?2, ?3, ?4, ?5)")
+    await DB.prepare("INSERT INTO documents_v2 (key, flavor, file, data, indexed_at) VALUES (?1, ?2, ?3, ?4, ?5)")
       .bind(key, flavor, file, data, at)
       .run();
-    await env.DB.prepare("INSERT INTO documents_search (key, flavor, docid, norm) VALUES (?1, ?2, ?3, ?4)")
+    await DB.prepare("INSERT INTO documents_search (key, flavor, docid, norm) VALUES (?1, ?2, ?3, ?4)")
       .bind(key, flavor, key, key.toLowerCase())
       .run();
   }
@@ -50,7 +55,7 @@ async function seed() {
 
 beforeAll(async () => {
   for (const stmt of SCHEMA.split(";").map((s) => s.trim()).filter(Boolean)) {
-    await env.DB.prepare(stmt).run();
+    await DB.prepare(stmt).run();
   }
   await seed();
 });
