@@ -149,6 +149,9 @@ export async function exportFlavor(
         if (partBytes >= PART_BYTES) await flushPart();
       }
       cursor = results[results.length - 1]!.key;
+      // D1 throttles bursts ("overloaded within a 10 second window") —
+      // pace the page reads so big flavors stay inside the window.
+      await new Promise((r) => setTimeout(r, 250));
     }
     await flushPart();
     const sha = digest.hex();
