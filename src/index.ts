@@ -1,4 +1,4 @@
-import { exportFlavor, generationOf, manifestKey, snapshotKey, TOOL, type SnapshotManifest } from "./export";
+import { exportSlice, finalizeForGen, generationOf, manifestKeyOf, pointerOf, TOOL, type SnapshotManifest } from "./export";
 import type { Env } from "./env";
 
 const SERVICE = "relaton-dumps";
@@ -32,7 +32,9 @@ export default {
       const flavors = await flavorList();
       const entries = await Promise.all(
         flavors.map(async (f) => {
-          const obj = await env.BUCKET.get(manifestKey(f));
+          const generation = await pointerOf(env.BUCKET, f);
+          if (!generation) return null;
+          const obj = await env.BUCKET.get(manifestKeyOf(f, generation));
           return obj ? ((await obj.json()) as SnapshotManifest) : null;
         }),
       );
@@ -46,12 +48,12 @@ export default {
           flavor: m.flavor,
           generation: m.generation,
           records: m.records,
-          sha256: m.sha256,
           bytes: m.bytes,
+          shards: m.shards.length,
+          integrity: m.integrity,
           created: m.created,
           license: m.license,
           manifest_url: `${baseUrl(request)}/v1/${m.flavor}/manifest.json`,
-          snapshot_url: `${baseUrl(request)}/snapshots/${m.flavor}/${m.generation}/records.ndjson`,
           latest_url: `${baseUrl(request)}/v1/${m.flavor}/latest`,
         })),
         pending: flavors.filter((f) => !snapshots.some((s) => s.flavor === f)),
@@ -61,24 +63,37 @@ export default {
     const flavorMatch = pathname.match(/^\/v1\/([a-z0-9_-]+)\/(latest|manifest\.json)$/);
     if (flavorMatch) {
       const [flavor, what] = [flavorMatch[1]!, flavorMatch[2]!];
-      const obj = await env.BUCKET.get(manifestKey(flavor));
+      const generation = await pointerOf(env.BUCKET, flavor);
+      if (!generation) return Response.json({ error: `no snapshot for ${flavor}` }, { status: 404 });
+      const obj = await env.BUCKET.get(manifestKeyOf(flavor, generation));
       if (!obj) return Response.json({ error: `no snapshot for ${flavor}` }, { status: 404 });
       const manifest = (await obj.json()) as SnapshotManifest;
       if (what === "manifest.json") return Response.json(manifest);
-      return Response.redirect(`${baseUrl(request)}/${snapshotKey(flavor, manifest.generation)}`, 302);
+      return Response.json({
+        generation,
+        manifest_url: `${baseUrl(request)}/snapshots/${flavor}/${generation}/manifest.json`,
+        shards: manifest.shards.map((s) => ({
+          url: `${baseUrl(request)}/${s.key}`,
+          records: s.records,
+          bytes: s.bytes,
+          sha256: s.sha256,
+        })),
+        records: manifest.records,
+      });
     }
 
-    const snapshotMatch = pathname.match(/^\/snapshots\/([a-z0-9_-]+)\/([0-9a-f]{16})\/records\.ndjson$/);
-    if (snapshotMatch) {
-      const [flavor, generation] = [snapshotMatch[1]!, snapshotMatch[2]!];
-      const obj = await env.BUCKET.get(snapshotKey(flavor, generation));
+    // Shard objects: single-PUT, immutable, per-shard checksums in the
+    // manifest and the object metadata.
+    const objectMatch = pathname.match(/^\/(snapshots\/[a-z0-9_-]+\/[0-9a-f]{16}\/(?:manifest\.json|shard-\d{4}\.jsonl))$/);
+    if (objectMatch && request.method === "GET") {
+      const obj = await env.BUCKET.get(objectMatch[1]!);
       if (!obj) return new Response("not found\n", { status: 404 });
-      // Snapshots are immutable: published generations cache forever.
+      const isShard = objectMatch[1]!.endsWith(".jsonl");
       return new Response(obj.body, {
         headers: {
-          "content-type": "application/x-ndjson",
+          "content-type": isShard ? "application/x-ndjson" : "application/json",
+          // Snapshots are immutable: published generations cache forever.
           "cache-control": "public, max-age=31536000, immutable",
-          etag: `"${generation}"`,
         },
       });
     }
@@ -87,8 +102,17 @@ export default {
     if (exportMatch && request.method === "POST") {
       if (!authorized(request, env)) return new Response("Forbidden\n", { status: 403 });
       const flavor = exportMatch[1]!;
+      const body = await request.json<{ cursor?: string | null; max_records?: number }>().catch(() => ({}) as { cursor?: string | null; max_records?: number });
       try {
-        const result = await exportFlavor(env.DB, env.BUCKET, flavor, { baseUrl: baseUrl(request) });
+        const result = await exportSlice(env.DB, env.BUCKET, flavor, {
+          cursor: body?.cursor ?? null,
+          maxRecords: body?.max_records,
+        });
+        if (result.done && !result.skipped) {
+          const gen = await generationOf(env.DB, flavor);
+          const manifest = await finalizeForGen(env.BUCKET, flavor, gen, { baseUrl: baseUrl(request) });
+          return Response.json({ ...result, records: manifest.records, manifest });
+        }
         return Response.json(result);
       } catch (e) {
         return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
