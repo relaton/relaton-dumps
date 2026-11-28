@@ -50,3 +50,5 @@ for f in json.load(sys.stdin).get('flavors', []):
               export_one "$f" || echo "export failed: $f"
             done
           fi
+
+# Dispatch: gh workflow run export.yml -f flavor=all
