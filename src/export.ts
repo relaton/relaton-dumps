@@ -40,7 +40,8 @@ export interface ExportResult {
 }
 
 const PAGE = 500;
-const PART_RECORDS = 2000;
+// R2 multipart parts must be >= 5 MiB (except the last); flush at ~8 MiB.
+const PART_BYTES = 8 * 1024 * 1024;
 const LICENSE = "CC-BY-4.0";
 import { Sha256 } from "./sha256";
 export const TOOL = "relaton-dumps/0.1.0";
@@ -102,6 +103,7 @@ export async function exportFlavor(
   let records = 0;
   let cursor = "";
   let partLines: string[] = [];
+  let partBytes = 0;
   const parts: R2UploadedPart[] = [];
   const upload = await bucket.createMultipartUpload(key, {
     httpMetadata: { contentType: "application/x-ndjson" },
@@ -120,6 +122,7 @@ export async function exportFlavor(
     bytes += body.byteLength;
     parts.push(await upload.uploadPart(parts.length + 1, body as BufferSource));
     partLines = [];
+    partBytes = 0;
   };
 
   try {
@@ -139,11 +142,11 @@ export async function exportFlavor(
         } catch {
           record = { key: r.key, unparseable: true };
         }
-        partLines.push(
-          JSON.stringify({ key: r.key, flavor: r.flavor, file: r.file, indexed_at: r.indexed_at, record }) + "\n",
-        );
+        const line = JSON.stringify({ key: r.key, flavor: r.flavor, file: r.file, indexed_at: r.indexed_at, record }) + "\n";
+        partLines.push(line);
+        partBytes += line.length;
         records += 1;
-        if (partLines.length >= PART_RECORDS) await flushPart();
+        if (partBytes >= PART_BYTES) await flushPart();
       }
       cursor = results[results.length - 1]!.key;
     }
