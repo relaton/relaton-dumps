@@ -13,5 +13,13 @@
       "bucket_name": "relaton-dumps"
     }
   ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "api-relaton-org",
+      "database_id": "c7c620c7-b102-4f85-9a8c-66c0fd3db246",
+      "read_replication": "auto"
+    }
+  ],
   "routes": [{ "pattern": "data.relaton.org", "custom_domain": true }]
 }
