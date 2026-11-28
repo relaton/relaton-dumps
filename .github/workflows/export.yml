@@ -34,9 +34,19 @@ jobs:
           FLAVOR="${{ inputs.flavor }}"
           export_one() {
             echo "=== exporting $1"
-            curl -sf --max-time 3600 -X POST \
-              -H "Authorization: Bearer $ADMIN_TOKEN" \
-              "$BASE/admin/export/$1"
+            CURSOR=""
+            DONE=false
+            for i in $(seq 1 200); do
+              RESP=$(curl -sf --max-time 1800 -X POST \
+                -H "Authorization: Bearer $ADMIN_TOKEN" \
+                -H "content-type: application/json" \
+                -d "{\"cursor\":\"$CURSOR\"}" \
+                "$BASE/admin/export/$1") || { echo "export failed: $1"; return 1; }
+              DONE=$(printf '%s' "$RESP" | python3 -c "import json,sys; print(str(json.load(sys.stdin).get('done', False)).lower())")
+              CURSOR=$(printf '%s' "$RESP" | python3 -c "import json,sys; print(json.load(sys.stdin).get('next_cursor') or '')")
+              echo "  slice: done=$DONE records=$(printf '%s' "$RESP" | python3 -c "import json,sys; print(json.load(sys.stdin).get('records', 0))")"
+              [ "$DONE" = "true" ] && break
+            done
             echo
           }
           if [ "$FLAVOR" != "all" ]; then
